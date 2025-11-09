@@ -1,0 +1,11 @@
+pandas
+numpy
+google-cloud-storage
+fastapi
+uvicorn
+gunicorn
+trimesh         # For 3D geometry meshing
+scikit-image    # Trimesh dependency
+pyglet          # Trimesh dependency
+google-genai    # For calling the Gemini API
+requests

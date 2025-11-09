@@ -2,14 +2,16 @@
 
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
 import zipfile
 import os
 import datetime
 import tempfile
 from google.cloud import storage
 from typing import Dict, Any, Tuple
+import trimesh
+import json
+from google import genai
+from google.genai import types
 
 # --- CONSTANTS ---
 AIRFOIL_FILE = 'combinedAirfoilDataLabeled.csv'
@@ -17,15 +19,18 @@ AIRFOIL_NAME = '2032c'
 SCALING_FACTOR = 1000000.0
 THICKNESS_VISUAL_FACTOR = 100.0
 ZIP_FILE_NAME = 'archive.zip'
-GCS_BUCKET_NAME = "aircraft_airfoil"  # Bucket name is now defined here
+GCS_BUCKET_NAME = "aircraft_airfoil"
 # -----------------
 
 # Global variables for data/client (initialized in the controller's startup event)
 df_airfoils = None
 storage_client = None
+gemini_client = None  # NEW: Global Gemini client
 
 
 # --- 2A. UTILITY FUNCTIONS ---
+# (validate_wing_parameters is now less critical but can remain for sanity checks)
+# (unzip_specific_file, load_airfoil_data, initialize_gcs_client remain the same)
 
 def validate_wing_parameters(wing_dims: Dict[str, float]) -> bool:
     """Verifies that the wing dimension parameters are physically correct."""
@@ -83,7 +88,19 @@ def initialize_gcs_client():
         storage_client = None
 
 
-# --- 2B. GEOMETRY AND PLOTTING ---
+def initialize_gemini_client():
+    """Initializes the Gemini client."""
+    global gemini_client
+    try:
+        # Looks for GEMINI_API_KEY environment variable
+        gemini_client = genai.Client()
+        print("Service: Gemini client initialized.")
+    except Exception as e:
+        print(f"Service ERROR: Failed to initialize Gemini client: {e}")
+        gemini_client = None
+
+
+# --- 2B. GEOMETRY AND EXPORT ---
 
 def calculate_polynomial_y(x_points: np.ndarray, coefficients: np.ndarray) -> np.ndarray:
     """Calculates the Y-coordinate (thickness) based on 31-coeff polynomial."""
@@ -114,14 +131,62 @@ def get_airfoil_coords() -> Tuple[np.ndarray, np.ndarray] | Tuple[None, None]:
     return x_profile, y_profile
 
 
-def plot_3d_wing(x_profile_norm, y_profile_norm, cr, sem_span, sweep_deg, taper_ratio, output_file_path: str) -> Dict[
+def extract_parameters_from_prompt(prompt: str) -> Dict[str, float]:
+    """
+    Uses the Gemini API to extract and validate the four required
+    numerical parameters from a natural language prompt.
+    """
+    if gemini_client is None:
+        raise ConnectionError("Gemini client is not initialized.")
+
+    # 1. Define the desired output schema (Pydantic style)
+    target_schema = types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "root_chord": types.Schema(type=types.Type.NUMBER, description="The wing root chord in meters."),
+            "semi_span": types.Schema(type=types.Type.NUMBER, description="Half the wingspan in meters."),
+            "sweep_angle_deg": types.Schema(type=types.Type.NUMBER, description="The sweep angle in degrees."),
+            "taper_ratio": types.Schema(type=types.Type.NUMBER,
+                                        description="The ratio of tip chord to root chord (Ct/Cr).")
+        },
+        required=["root_chord", "semi_span", "sweep_angle_deg", "taper_ratio"]
+    )
+
+    system_instruction = (
+        "You are an AI assistant specialized in aerospace engineering. Your task is to extract "
+        "the four critical numerical parameters for a wing design from the user's prompt. "
+        "Return the output as a valid JSON object matching the provided schema, using sensible "
+        "default values (e.g., Cr=2.0, SemiSpan=5.0, Sweep=25.0, Taper=0.5) if any parameters are missing."
+    )
+
+    try:
+        # 2. Call the Gemini API, enforcing JSON output
+        response = gemini_client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=system_instruction,
+                response_mime_type="application/json",
+                response_schema=target_schema
+            )
+        )
+
+        # 3. Parse the JSON response text
+        parsed_data = json.loads(response.text)
+        return parsed_data
+
+    except Exception as e:
+        print(f"Gemini Extraction Error: {e}")
+        # Re-raise as a ValueError so FastAPI returns a 400 Bad Request
+        raise ValueError("Failed to extract valid wing parameters from the prompt. Please be more specific.")
+
+
+def export_3d_wing(x_profile_norm, y_profile_norm, cr, sem_span, sweep_deg, taper_ratio, output_file_path: str) -> Dict[
     str, float]:
     """
-    Generates the 3D plot and saves it to the specified path.
-    Returns calculated geometric data.
+    Generates the 3D mesh and saves it to the specified path as a GLB file.
+    NOTE: The meshing logic uses a complex Trimesh operation (convex_hull).
     """
-
-    # ... (Calculations for total_span, tip_chord, wing_area, aspect_ratio) ...
     n_span = 20
     sweep_rad = np.deg2rad(sweep_deg)
     y_span_right = np.linspace(0, sem_span, n_span)
@@ -133,54 +198,44 @@ def plot_3d_wing(x_profile_norm, y_profile_norm, cr, sem_span, sweep_deg, taper_
     wing_area = ((cr + tip_chord) / 2.0) * total_span
     aspect_ratio = (total_span ** 2) / wing_area
 
-    # ... (Plotting logic, markers, labels, title, and scaling remain the same) ...
-    X_right, Y_right, Z_right = [], [], []
+    # --- TRIAINGULATION/MESHING LOGIC ---
+    all_vertices = []
+
+    # 1. Generate all points for the wing surface (Right Half)
     for i in range(n_span):
         c_i = chord_at_y[i]
         x_LE_i = x_LE_at_y[i]
+        y_i = y_span_right[i]
+
         x_airfoil = (x_profile_norm * c_i) + x_LE_i
         z_airfoil = y_profile_norm * c_i * THICKNESS_VISUAL_FACTOR
-        y_airfoil = np.full_like(x_airfoil, y_span_right[i])
-        X_right.append(x_airfoil);
-        Y_right.append(y_airfoil);
-        Z_right.append(z_airfoil)
 
-    Y_left = [-y_coord for y_coord in Y_right];
-    X_left = X_right;
-    Z_left = Z_right
-    X_full = np.concatenate(X_left + X_right);
-    Y_full = np.concatenate(Y_left + Y_right);
-    Z_full = np.concatenate(Z_left + Z_right)
-    X_plot = X_left + X_right;
-    Y_plot = Y_left + Y_right;
-    Z_plot = Z_left + Z_right
+        current_station_points = np.column_stack([
+            x_airfoil,
+            np.full_like(x_airfoil, y_i),
+            z_airfoil
+        ])
+        all_vertices.extend(current_station_points.tolist())
 
-    fig = plt.figure(figsize=(12, 9))
-    ax = fig.add_subplot(111, projection='3d')
-    for i in range(len(X_plot)):
-        ax.plot(X_plot[i], Y_plot[i], Z_plot[i], color='blue', linewidth=0.5, alpha=0.7)
+    # 2. Add Left Half (Mirroring across the XZ plane)
+    left_vertices = [
+        [v[0], -v[1], v[2]] for v in all_vertices if v[1] > 0
+    ]
+    all_vertices.extend(left_vertices)
 
-    # Markers
-    X_TE_center = x_LE_at_y[0] + cr * x_profile_norm[0]
-    ax.plot([X_TE_center, X_TE_center], [-sem_span, sem_span], [0, 0], color='red', linestyle='--', linewidth=2,
-            alpha=0.8, label=f'Span (b={total_span:.1f}m)')
-    x_min_root = x_LE_at_y[0];
-    x_max_root = x_LE_at_y[0] + cr
-    ax.plot([x_min_root, x_max_root], [0, 0], [0, 0], color='green', linestyle=':', linewidth=2, alpha=0.8,
-            label=f'Chord (Cr={cr:.1f}m)')
+    # 3. Create Mesh (Uses convex hull as a simplification)
+    vertices = np.array(all_vertices)
+    try:
+        mesh = trimesh.Trimesh(vertices=vertices).convex_hull
+    except trimesh.exceptions.TrimeshException as e:
+        raise ValueError(f"Failed to create 3D mesh (Triangulation required): {e}")
 
-    # Labels and Title
-    ax.set_xlabel('X (Chord, m)');
-    ax.set_ylabel('Y (Span, m)');
-    ax.set_zlabel(f'Z (Thickness x{THICKNESS_VISUAL_FACTOR:.0f})')
-    ax.set_title(
-        f'3D Full Wing: $\\Lambda$={sweep_deg}° | $c_r$={cr:.1f}m | $b$={total_span:.1f}m \nAR={aspect_ratio:.1f} | $S_{{ref}}$={wing_area:.1f}m²',
-        fontsize=14)
-    ax.legend(loc='upper right')
-    ax.set_box_aspect([1, (total_span / cr), 0.2])
-
-    plt.savefig(output_file_path, format='png', bbox_inches='tight')
-    plt.close(fig)
+    # 4. Export the GLB file
+    try:
+        with open(output_file_path, 'wb') as f:
+            f.write(trimesh.exchange.gltf.export_glb(mesh))
+    except Exception as e:
+        raise ConnectionError(f"Failed to export GLB file: {e}")
 
     return {
         "aspect_ratio": aspect_ratio,
@@ -191,48 +246,57 @@ def plot_3d_wing(x_profile_norm, y_profile_norm, cr, sem_span, sweep_deg, taper_
 
 # --- 2C. PRIMARY SERVICE FUNCTION ---
 
-def generate_and_upload_wing(params: Dict[str, float]) -> Dict[str, Any]:
+def generate_and_upload_wing(prompt_data: Dict[str, str]) -> Dict[str, Any]:
     """
-    Main service function: runs geometry calc, plotting, and GCS upload.
+    Main service function: runs Gemini extraction, geometry calc, meshing, and GCS upload.
     """
     if df_airfoils is None:
         raise ConnectionError("Airfoil data is unavailable.")
     if storage_client is None:
         raise ConnectionError("GCS client is not initialized.")
+    if gemini_client is None:
+        raise ConnectionError("Gemini client is not initialized.")
 
-    # 1. Get Airfoil Coords
+    # 1. NEW STEP: Extract Parameters from Prompt
+    params = extract_parameters_from_prompt(prompt_data['prompt'])
+
+    # 2. Validate extracted parameters (Uses original validation logic)
+    validate_wing_parameters(params)
+
+    # 3. Get Airfoil Coords
     x_norm, y_norm = get_airfoil_coords()
     if x_norm is None:
         raise ValueError(f"Airfoil name '{AIRFOIL_NAME}' not found in dataset.")
 
-    # Generate a unique filename
+    # Generate a unique filename and use GLB extension
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    gcs_filename = f"wing_design/wing_{timestamp}_{params['sweep_angle_deg']}deg.png"
+    # Use the extracted sweep angle in the filename
+    gcs_filename = f"wing_design/wing_{timestamp}_{params['sweep_angle_deg']}deg.glb"
 
-    # Use a temporary file to save the matplotlib output
-    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_file:
+    # Use a temporary file to save the trimesh output with GLB suffix
+    with tempfile.NamedTemporaryFile(suffix=".glb", delete=False) as tmp_file:
         temp_file_path = tmp_file.name
 
     try:
-        # 2. Plot and Save locally
-        calculated_data = plot_3d_wing(
+        # 4. Export and Save locally (using new export function)
+        calculated_data = export_3d_wing(
             x_profile_norm=x_norm, y_profile_norm=y_norm,
             cr=params['root_chord'], sem_span=params['semi_span'],
             sweep_deg=params['sweep_angle_deg'], taper_ratio=params['taper_ratio'],
             output_file_path=temp_file_path
         )
 
-        # 3. Upload to GCS
+        # 5. Upload to GCS
         bucket = storage_client.bucket(GCS_BUCKET_NAME)
         blob = bucket.blob(gcs_filename)
         blob.upload_from_filename(temp_file_path)
 
-        blob.make_public()
+        # Get public URL (Assumes public read permission is set on the bucket)
         public_url = blob.public_url
 
-        # 4. Return results
+        # 6. Return results
         return {
-            "message": "Wing image generated and uploaded successfully.",
+            "message": "Wing model generated and uploaded successfully.",
             "gcs_path": f"gs://{GCS_BUCKET_NAME}/{gcs_filename}",
             "public_url": public_url,
             "root_chord": params['root_chord'],

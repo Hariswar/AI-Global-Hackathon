@@ -3,9 +3,14 @@ import logging
 import os
 from typing import Any, Dict, Optional, Tuple
 
+<<<<<<< HEAD
 from google.api_core.exceptions import GoogleAPICallError  # type: ignore[import]
 from google.cloud import aiplatform  # type: ignore[import]
 from google.oauth2 import service_account  # type: ignore[import]
+=======
+from google.api_core.exceptions import GoogleAPICallError
+# from google.cloud import aiplatform
+>>>>>>> 75b2092861bb57e4b19ce04ea45137539099dbf9
 
 logger = logging.getLogger("sketch_to_sky")
 
