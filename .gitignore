@@ -1,0 +1,6 @@
+vertex-ai-key.json
+sketch-to-sky-backend/vertex-ai-key.json
+.env
+.venv/
+__pycache__/
+
