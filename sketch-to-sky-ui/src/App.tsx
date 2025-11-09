@@ -1,5 +1,5 @@
-import { Home } from './pages/Home'
+import EditorCanvasPage from './pages/EditorCanvasPage'
 
 export default function App() {
-  return <Home />
+  return <EditorCanvasPage />
 }

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useCallback } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
 import type { GeneratedModel, ModelMetadata } from '../types'
@@ -10,6 +10,9 @@ interface GenerateResponse {
   metadata?: ModelMetadata
   thumbnailUrl?: string
 }
+
+const createId = () =>
+  typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}`
 
 const readHistory = (): GeneratedModel[] => {
   if (typeof window === 'undefined') return []
@@ -44,6 +47,17 @@ export const useModelGenerator = () => {
     staleTime: Infinity,
   })
 
+  const upsertHistory = (entry: GeneratedModel) => {
+    queryClient.setQueryData<GeneratedModel[]>(['model-history'], (prev) => {
+      const list = prev ?? []
+      const filtered = list.filter((item) => item.id !== entry.id)
+      const next = [entry, ...filtered].slice(0, 20)
+      persistHistory(next)
+      return next
+    })
+    setSelectedId(entry.id)
+  }
+
   const mutation = useMutation({
     mutationKey: ['generate-model'],
     mutationFn: async (prompt: string) => {
@@ -61,19 +75,14 @@ export const useModelGenerator = () => {
     },
     onSuccess: (result, prompt) => {
       const entry: GeneratedModel = {
-        id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}`,
+        id: createId(),
         prompt,
         url: result.url,
         thumbnailUrl: result.thumbnailUrl,
         metadata: result.metadata,
         createdAt: new Date().toISOString(),
       }
-      queryClient.setQueryData<GeneratedModel[]>(['model-history'], (prev) => {
-        const next = [entry, ...(prev ?? [])].slice(0, 20)
-        persistHistory(next)
-        return next
-      })
-      setSelectedId(entry.id)
+      upsertHistory(entry)
     },
   })
 
@@ -93,14 +102,36 @@ export const useModelGenerator = () => {
     setSelectedId(null)
   }
 
+  const generateModel = useCallback(async (prompt: string) => {
+    await mutation.mutateAsync(prompt)
+  }, [mutation])
+
+  const loadExternalModel = ({
+    id = createId(),
+    prompt,
+    url,
+    thumbnailUrl,
+    metadata,
+    createdAt,
+  }: Partial<GeneratedModel> & { url: string }) => {
+    const entry: GeneratedModel = {
+      id,
+      prompt: prompt ?? 'Sample aircraft model',
+      url,
+      thumbnailUrl,
+      metadata,
+      createdAt: createdAt ?? new Date().toISOString(),
+    }
+    upsertHistory(entry)
+  }
+
   return {
     history,
     selectedModel,
     selectModel,
     clearHistory,
-    generateModel: async (prompt: string) => {
-      await mutation.mutateAsync(prompt)
-    },
+    generateModel,
+    loadExternalModel,
     isGenerating: mutation.isPending,
     error: mutation.error instanceof Error ? mutation.error : null,
     resetError: mutation.reset,

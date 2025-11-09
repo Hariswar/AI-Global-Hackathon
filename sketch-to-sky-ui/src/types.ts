@@ -21,3 +21,15 @@ export interface ModelTransform {
   baseColor: string
 }
 
+export type ModelSource = 'remote' | 'local' | 'dreamfusion' | 'upload' | 'demo'
+export type GeneratorMode = 'auto' | 'remote' | 'local' | 'dreamfusion'
+
+export interface SceneModel {
+  id: string
+  name: string
+  source: ModelSource
+  url: string
+  position: [number, number, number]
+  metadata?: Record<string, unknown>
+}
+

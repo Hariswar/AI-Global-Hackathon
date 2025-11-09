@@ -1,44 +1,12 @@
-# Core Data Manipulation and Numerical Libraries
-pandas>=2.1.0
-numpy>=1.26.0
-
-# Visualization Library
-matplotlib>=3.8.0
-
-# Machine Learning and Statistical Modeling Libraries
-scikit-learn>=1.3.0
-xgboost>=2.0.0
-
-# Kaggle API Tool (Note: The package name is typically 'kaggle')
-kaggle
-
-# Croissant Metadata Library
-mlcroissant
-
-# API Web Framework
-Flask
-
-
-# Core Data Manipulation and Numerical Libraries
-pandas>=2.1.0
-numpy>=1.26.0
-
-# Visualization Library (for plot generation)
-matplotlib>=3.8.0
-
-# FastAPI and Uvicorn (for the web service)
 fastapi
 uvicorn
-
-# Pydantic (for data validation in FastAPI)
-pydantic
-
-# Google Cloud Storage (for uploading the image)
+pandas>=2.1.0
+numpy>=1.26.0
+matplotlib>=3.8.0
+mlcroissant
+trimesh
+python-dotenv
 google-cloud-storage
 
-# Utilities (for reading the original data file)
-
-mlcroissant # If you plan to formally use the Croissant metadata standard
-
-# Note: scikit-learn and xgboost were in your original list but are
-# not strictly required for the geometry/plotting logic.
+# HTTP Client for remote API calls
+httpx>=0.27.0

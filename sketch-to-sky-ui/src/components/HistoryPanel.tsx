@@ -51,7 +51,7 @@ export const HistoryPanel = ({
         )}
       </div>
 
-      <div className="mt-4 space-y-3">
+      <div className="mt-4 max-h-[420px] space-y-3 overflow-y-auto pr-1 scrollbar-thin scrollbar-track-slate-900/60 scrollbar-thumb-slate-700/70 hover:scrollbar-thumb-slate-600/70">
         {isLoading && (
           <div className="space-y-3">
             <LoadingShimmer className="h-24 rounded-2xl" />
@@ -110,6 +110,9 @@ export const HistoryPanel = ({
 
                     <div className="flex flex-1 flex-col gap-2">
                       <div className="text-sm font-medium leading-snug text-slate-100 [display:-webkit-box] [-webkit-line-clamp:3] [-webkit-box-orient:vertical] [overflow:hidden] [text-overflow:ellipsis]">
+                        {item.prompt}
+                      </div>
+                      <div className="mt-1 text-xs text-slate-400">
                         {item.prompt}
                       </div>
                       <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
