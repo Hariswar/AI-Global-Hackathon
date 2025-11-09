@@ -7,6 +7,8 @@ from typing import Dict, Tuple
 from urllib.parse import urlparse
 
 import httpx  # type: ignore[import]
+from google.genai import types as genai_types  # type: ignore[import]
+from google.genai.client import Client as GeminiClient  # type: ignore[import]
 
 from ai.extraction import ExtractionError, generate_3d_model
 from services.vertex_ai import generate_model as dreamfusion_generate_model
@@ -21,6 +23,9 @@ REMOTE_TIMEOUT = int(os.getenv("WING_GENERATOR_TIMEOUT", "120"))
 BASE_URL = os.getenv("PUBLIC_BASE_URL", "http://127.0.0.1:8000")
 GENERATED_DIR = Path("generated_models")
 GENERATED_DIR.mkdir(parents=True, exist_ok=True)
+
+_gemini_client: GeminiClient | None = None
+GEMINI_MODEL = os.getenv("GEMINI_TEXT_MODEL", "gemini-2.5-flash")
 
 
 class WingGeneratorError(Exception):
@@ -82,13 +87,31 @@ def _require_numeric(params: Dict[str, object], key: str) -> float:
 
 def generate_with_remote_api(params: Dict[str, object]) -> Dict[str, object]:
     logger.info("[AI] Sending request to Wing Generator API...")
+    root_chord = _require_numeric(params, "root_chord")
+    semi_span = _require_numeric(params, "semi_span")
+    sweep_angle = _require_numeric(params, "sweep_angle_deg")
+    taper_ratio = _require_numeric(params, "taper_ratio")
+
+    prompt_text = (params.get("prompt_text") or "").strip()
+    structured_prompt = (
+        "Aircraft wing concept with root chord {root:.2f} m, semi-span {span:.2f} m, "
+        "sweep angle {sweep:.1f} degrees, taper ratio {taper:.2f}."
+    ).format(
+        root=root_chord,
+        span=semi_span,
+        sweep=sweep_angle,
+        taper=taper_ratio,
+    )
+    combined_prompt = f"{prompt_text}\n\n{structured_prompt}" if prompt_text else structured_prompt
+
     try:
         with httpx.Client(timeout=REMOTE_TIMEOUT) as client:
             request_payload = {
-                "root_chord": _require_numeric(params, "root_chord"),
-                "semi_span": _require_numeric(params, "semi_span"),
-                "sweep_angle_deg": _require_numeric(params, "sweep_angle_deg"),
-                "taper_ratio": _require_numeric(params, "taper_ratio"),
+                "root_chord": root_chord,
+                "semi_span": semi_span,
+                "sweep_angle_deg": sweep_angle,
+                "taper_ratio": taper_ratio,
+                "prompt": combined_prompt,
             }
             response = client.post(REMOTE_ENDPOINT, json=request_payload)
             response.raise_for_status()
@@ -97,12 +120,14 @@ def generate_with_remote_api(params: Dict[str, object]) -> Dict[str, object]:
 
             public_url = payload.get("public_url") or (payload.get("model") or {}).get("glb_url")
             if not public_url:
-                raise WingGeneratorError("Remote response missing public_url.")
+                detail = payload.get("detail") or payload
+                raise WingGeneratorError(f"Remote response missing public_url. Payload: {detail}")
 
             local_path, viewer_url = _download_or_copy_asset(public_url, "remote_wing", client)
 
     except httpx.HTTPError as exc:  # noqa: PERF203
-        raise WingGeneratorError(f"Remote generator request failed: {exc}") from exc
+        message = exc.response.json() if getattr(exc, "response", None) else str(exc)
+        raise WingGeneratorError(f"Remote generator request failed: {message}") from exc
 
     payload.setdefault("message", "Wing model generated and uploaded successfully.")
     payload["source"] = payload.get("source", "remote")
@@ -117,6 +142,22 @@ def generate_with_remote_api(params: Dict[str, object]) -> Dict[str, object]:
         payload.setdefault("original_prompt", params["prompt_text"])
     logger.info("[AI] Remote success, model URL: %s", viewer_url)
     return payload
+
+
+def _get_gemini_client() -> GeminiClient:
+    global _gemini_client  # noqa: PLW0603
+    if _gemini_client is not None:
+        return _gemini_client
+
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise WingGeneratorError("GEMINI_API_KEY environment variable is not set.")
+
+    try:
+        _gemini_client = GeminiClient(api_key=api_key)
+    except Exception as exc:  # noqa: BLE001
+        raise WingGeneratorError(f"Failed to initialize Gemini client: {exc}") from exc
+    return _gemini_client
 
 
 def generate_with_local_model(params: Dict[str, object]) -> Dict[str, object]:
@@ -215,4 +256,82 @@ def generate_with_dreamfusion(params: Dict[str, object]) -> Dict[str, object]:
     }
 
     logger.info("[AI] DreamFusion generation completed. Viewer URL: %s", viewer_url)
+    return payload
+
+
+def generate_with_gemini(params: Dict[str, object]) -> Dict[str, object]:
+    logger.info("[AI] Generating wing using Gemini-aided pipeline...")
+
+    client = _get_gemini_client()
+
+    root_chord = _require_numeric(params, "root_chord")
+    semi_span = _require_numeric(params, "semi_span")
+    sweep_angle = _require_numeric(params, "sweep_angle_deg")
+    taper_ratio = _require_numeric(params, "taper_ratio")
+    original_prompt = (params.get("prompt_text") or "").strip()
+
+    structured_prompt = (
+        "High-fidelity wing concept. Root chord {root:.2f} m, semi-span {span:.2f} m, "
+        "sweep angle {sweep:.1f} degrees, taper ratio {taper:.2f}. "
+        "Prioritize aerodynamic efficiency and manufacturability."
+    ).format(
+        root=root_chord,
+        span=semi_span,
+        sweep=sweep_angle,
+        taper=taper_ratio,
+    )
+    combined_prompt = f"{original_prompt}\n\n{structured_prompt}" if original_prompt else structured_prompt
+
+    design_brief: str | None = None
+    try:
+        response = client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=[combined_prompt],
+            config=genai_types.GenerateContentConfig(
+                system_instruction=(
+                    "You are an aerospace design assistant. Produce a concise, technical summary "
+                    "for the requested wing concept. Return Markdown with two sections: "
+                    "1) Key design notes (bulleted) and 2) Recommended materials."
+                ),
+            ),
+        )
+        design_brief = (response.text or "").strip()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Gemini text generation failed: %s", exc)
+
+    try:
+        path, metadata = generate_3d_model(combined_prompt)
+    except ExtractionError as exc:
+        raise WingGeneratorError(f"Gemini-assisted local generation failed: {exc}") from exc
+
+    viewer_url = _resolve_viewer_url(path.name)
+
+    metadata = metadata or {}
+    metadata.update(
+        {
+            "provider": "gemini",
+            "gemini_design_brief": design_brief,
+            "original_prompt": original_prompt,
+            "structured_prompt": structured_prompt,
+        }
+    )
+
+    payload = {
+        "message": "Wing model generated using Gemini-assisted design pipeline.",
+        "viewer_url": viewer_url,
+        "public_url": viewer_url,
+        "local_path": str(path),
+        "root_chord": root_chord,
+        "total_span": metadata.get("total_span"),
+        "aspect_ratio": metadata.get("aspect_ratio"),
+        "wing_area": metadata.get("wing_area"),
+        "source": "gemini",
+        "gemini_design_brief": design_brief,
+        "structured_prompt": structured_prompt,
+    }
+    if params.get("prompt_text"):
+        payload.setdefault("original_prompt", params["prompt_text"])
+    payload["metadata"] = metadata
+
+    logger.info("[AI] Gemini pipeline completed. Viewer URL: %s", viewer_url)
     return payload

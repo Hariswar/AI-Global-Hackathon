@@ -13,6 +13,7 @@ FALLBACK_MODEL_URL = (
     "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/"
     "DamagedHelmet/glTF-Binary/DamagedHelmet.glb"
 )
+DEFAULT_DREAMFUSION_MODEL = "publishers/google/models/dreamfusion-text-to-3d@001"
 
 
 def _fallback(prompt: str, reason: str) -> Tuple[str, Dict[str, Any]]:
@@ -106,7 +107,9 @@ def generate_model(prompt: str) -> Tuple[str, Dict[str, Any]]:
         return _fallback(cleaned_prompt, "Unable to initialize Vertex AI client")
 
     try:
-        model = aiplatform.Model("publishers/google/models/dreamfusion-3d")
+        model_resource = os.getenv("GOOGLE_DREAMFUSION_MODEL", DEFAULT_DREAMFUSION_MODEL)
+        logger.info("Using DreamFusion model resource: %s", model_resource)
+        model = aiplatform.Model(model_resource)
     except GoogleAPICallError as exc:
         logger.exception("Google API error while accessing DreamFusion model: %s", exc)
         return _fallback(cleaned_prompt, "DreamFusion model access failed")

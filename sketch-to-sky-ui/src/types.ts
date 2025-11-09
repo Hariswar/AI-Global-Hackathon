@@ -21,8 +21,8 @@ export interface ModelTransform {
   baseColor: string
 }
 
-export type ModelSource = 'remote' | 'local' | 'dreamfusion' | 'upload' | 'demo'
-export type GeneratorMode = 'auto' | 'remote' | 'local' | 'dreamfusion'
+export type ModelSource = 'remote' | 'local' | 'dreamfusion' | 'gemini' | 'upload' | 'demo'
+export type GeneratorMode = 'auto' | 'remote' | 'local' | 'dreamfusion' | 'gemini'
 
 export interface SceneModel {
   id: string

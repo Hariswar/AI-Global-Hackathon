@@ -9,6 +9,7 @@ from services.wing_generator import (
     generate_with_local_model,
     generate_with_dreamfusion,
     generate_with_remote_api,
+    generate_with_gemini,
 )
 
 logger = logging.getLogger("sketch_to_sky")
@@ -25,9 +26,11 @@ class WingParameters(BaseModel):
         default=None,
         description="Original user prompt text (optional, used for DreamFusion context).",
     )
-    generator: Literal["auto", "remote", "local", "dreamfusion"] = Field(
+    generator: Literal["auto", "remote", "local", "dreamfusion", "gemini"] = Field(
         "auto",
-        description="Select which generation pipeline to use. Defaults to auto (remote → dreamfusion → local fallback).",
+        description=(
+            "Select which generation pipeline to use. Defaults to auto (remote → dreamfusion → gemini → local fallback)."
+        ),
     )
 
     model_config = ConfigDict(extra="ignore")
@@ -64,6 +67,13 @@ async def generate_wing_model(params: WingParameters) -> Dict[str, object]:
             logger.error("[AI] DreamFusion generator failed: %s", exc)
             raise _wrap_error("DreamFusion generation failed", exc)
 
+    if generator_mode == "gemini":
+        try:
+            return generate_with_gemini(payload)
+        except WingGeneratorError as exc:
+            logger.error("[AI] Gemini generator failed: %s", exc)
+            raise _wrap_error("Gemini generation failed", exc)
+
     # Auto mode: try remote -> dreamfusion -> local
     try:
         return generate_with_remote_api(payload)
@@ -80,6 +90,14 @@ async def generate_wing_model(params: WingParameters) -> Dict[str, object]:
     except Exception as exc:  # noqa: BLE001
         logger.exception("[AI] Unexpected error during DreamFusion generation.")
         raise _wrap_error("DreamFusion generation failed due to unexpected error", exc, status_code=500)
+
+    try:
+        return generate_with_gemini(payload)
+    except WingGeneratorError as exc:
+        logger.warning("[AI] Gemini generator failed (%s). Falling back to local Extraction...", exc)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("[AI] Unexpected error during Gemini generation.")
+        raise _wrap_error("Gemini generation failed due to unexpected error", exc, status_code=500)
 
     try:
         return generate_with_local_model(payload)

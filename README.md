@@ -25,8 +25,11 @@
    ```bash
    GOOGLE_PROJECT_ID=your-project-id
    GOOGLE_APPLICATION_CREDENTIALS=/absolute/path/service-account.json
-   # optional (required for DreamFusion mode):
-   # VERTEX_MODEL_RESOURCE=projects/<PROJECT_ID>/locations/<LOCATION>/models/<MODEL_ID>
+   # optional override for DreamFusion model resource:
+   # GOOGLE_DREAMFUSION_MODEL=publishers/google/models/dreamfusion-text-to-3d@001
+   # optional: enable Gemini generator (requires API key)
+   # GEMINI_API_KEY=your-gemini-api-key
+   # GEMINI_TEXT_MODEL=gemini-2.5-flash
    ```
 
 3. Start the API:
@@ -39,7 +42,7 @@
 ### Local Extraction & Remote Generator
 
 - The backend first calls the remote wing generator (`REMOTE_WING_API`, default `https://…/generate`).
-- If the remote call fails, it falls back to the local extraction pipeline, then Vertex AI, then demo assets.
+- If the remote call fails, it falls back to the Vertex AI DreamFusion pipeline, then the Gemini-assisted local pipeline, and finally the purely local extraction workflow before surfacing demo assets.
 - Generated `.glb` files are stored under `sketch-to-sky-backend/generated_models/` and served via `GET /models/{filename}`. Set `PUBLIC_BASE_URL` if the backend is not running on `http://127.0.0.1:8000`.
 - Quick test:
   ```bash
@@ -69,3 +72,12 @@
    Vite serves the app at `http://localhost:5173/`.
 
 Ensure the backend is running before generating models from the frontend UI. Adjust the API URL if your backend is hosted elsewhere.
+
+
+python3 -m venv .venv
+
+source .venv/bin/activate
+
+uvicorn main:app --host 0.0.0.0 --port 8000
+
+pip install -r requirements.txt

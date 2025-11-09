@@ -77,9 +77,10 @@ export function PromptModal({
                 disabled={isLoading}
                 className="rounded-xl border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                <option value="auto">Auto (Remote → DreamFusion → Local)</option>
+                <option value="auto">Auto (Remote → DreamFusion → Gemini → Local)</option>
                 <option value="remote">Remote API</option>
                 <option value="dreamfusion">DreamFusion</option>
+                <option value="gemini">Gemini Assistant</option>
                 <option value="local">Local Extraction</option>
               </select>
             </div>
