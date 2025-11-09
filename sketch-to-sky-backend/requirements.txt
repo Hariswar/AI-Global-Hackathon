@@ -6,6 +6,7 @@ matplotlib>=3.8.0
 mlcroissant
 trimesh
 python-dotenv
+google-cloud-aiplatform
 google-cloud-storage
 
 # HTTP Client for remote API calls
