@@ -1,4 +1,4 @@
-const GITHUB_URL = 'https://github.com/'
+const GITHUB_URL = 'https://github.com/Hariswar/AI-Global-Hackathon'
 
 export const Navbar = () => {
   return (
