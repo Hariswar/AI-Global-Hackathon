@@ -52,6 +52,7 @@ export function BottomPromptBar({
                 <option value="remote">Remote API</option>
                 <option value="dreamfusion">DreamFusion</option>
                 <option value="gemini">Gemini Assistant</option>
+                <option value="parametric">Parametric</option>
                 <option value="local">Local</option>
               </select>
               <button

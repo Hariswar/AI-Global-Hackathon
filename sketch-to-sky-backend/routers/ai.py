@@ -10,6 +10,7 @@ from services.wing_generator import (
     generate_with_dreamfusion,
     generate_with_remote_api,
     generate_with_gemini,
+    generate_with_parametric,
 )
 
 logger = logging.getLogger("sketch_to_sky")
@@ -26,10 +27,11 @@ class WingParameters(BaseModel):
         default=None,
         description="Original user prompt text (optional, used for DreamFusion context).",
     )
-    generator: Literal["auto", "remote", "local", "dreamfusion", "gemini"] = Field(
+    generator: Literal["auto", "remote", "local", "dreamfusion", "gemini", "parametric"] = Field(
         "auto",
         description=(
-            "Select which generation pipeline to use. Defaults to auto (remote → dreamfusion → gemini → local fallback)."
+            "Select which generation pipeline to use. "
+            "Defaults to auto (remote → dreamfusion → gemini → parametric → local fallback)."
         ),
     )
 
@@ -74,7 +76,14 @@ async def generate_wing_model(params: WingParameters) -> Dict[str, object]:
             logger.error("[AI] Gemini generator failed: %s", exc)
             raise _wrap_error("Gemini generation failed", exc)
 
-    # Auto mode: try remote -> dreamfusion -> local
+    if generator_mode == "parametric":
+        try:
+            return generate_with_parametric(payload)
+        except WingGeneratorError as exc:
+            logger.error("[AI] Parametric generator failed: %s", exc)
+            raise _wrap_error("Parametric generation failed", exc)
+
+    # Auto mode: try remote -> dreamfusion -> gemini -> parametric -> local
     try:
         return generate_with_remote_api(payload)
     except WingGeneratorError as exc:
@@ -94,10 +103,18 @@ async def generate_wing_model(params: WingParameters) -> Dict[str, object]:
     try:
         return generate_with_gemini(payload)
     except WingGeneratorError as exc:
-        logger.warning("[AI] Gemini generator failed (%s). Falling back to local Extraction...", exc)
+        logger.warning("[AI] Gemini generator failed (%s). Trying parametric...", exc)
     except Exception as exc:  # noqa: BLE001
         logger.exception("[AI] Unexpected error during Gemini generation.")
         raise _wrap_error("Gemini generation failed due to unexpected error", exc, status_code=500)
+
+    try:
+        return generate_with_parametric(payload)
+    except WingGeneratorError as exc:
+        logger.warning("[AI] Parametric generator failed (%s). Falling back to local Extraction...", exc)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("[AI] Unexpected error during parametric generation.")
+        raise _wrap_error("Parametric generation failed due to unexpected error", exc, status_code=500)
 
     try:
         return generate_with_local_model(payload)

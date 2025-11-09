@@ -39,11 +39,29 @@
 
    The service responds on `http://localhost:8000`.
 
-### Local Extraction & Remote Generator
+### Generation Options
 
-- The backend first calls the remote wing generator (`REMOTE_WING_API`, default `https://…/generate`).
-- If the remote call fails, it falls back to the Vertex AI DreamFusion pipeline, then the Gemini-assisted local pipeline, and finally the purely local extraction workflow before surfacing demo assets.
+The backend supports multiple wing generation pipelines:
+
+1. **Remote API** (`remote`): Calls external wing generator API
+2. **DreamFusion** (`dreamfusion`): Uses Vertex AI DreamFusion for text-to-3D generation
+3. **Gemini Assistant** (`gemini`): Uses Gemini AI to generate design briefs, then local extraction
+4. **Parametric Wing** (`parametric`): Standalone parametric wing generator using pure geometry (no airfoil dataset required)
+5. **Local Extraction** (`local`): Uses local extraction pipeline with airfoil dataset
+
+**Auto Mode**: Automatically tries pipelines in order: Remote → DreamFusion → Gemini → Parametric → Local
+
 - Generated `.glb` files are stored under `sketch-to-sky-backend/generated_models/` and served via `GET /models/{filename}`. Set `PUBLIC_BASE_URL` if the backend is not running on `http://127.0.0.1:8000`.
+
+#### Parametric Wing Generator (Backup Option)
+
+The parametric wing generator (`services/parametric_wing.py`) creates 3D wing meshes using:
+- Pure geometric parameters (root_chord, semi_span, sweep_angle_deg, taper_ratio)
+- Simple symmetric airfoil profile (NACA-like geometry)
+- No external dependencies on airfoil datasets
+- Fast, reliable fallback option
+
+This generator is automatically included in the fallback chain and can be selected independently via the `generator=parametric` parameter.
 - Quick test:
   ```bash
   curl -X POST http://localhost:8000/test-extraction \

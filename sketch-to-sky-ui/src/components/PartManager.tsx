@@ -66,9 +66,13 @@ export function PartManager({ models, activeModelId, onFocus, onRemove }: PartMa
                               ? 'Local Extraction'
                               : model.source === 'dreamfusion'
                                 ? 'DreamFusion'
-                                : model.source === 'demo'
-                                  ? 'Demo asset'
-                                  : 'Uploaded'}
+                                : model.source === 'gemini'
+                                  ? 'Gemini AI'
+                                  : model.source === 'parametric'
+                                    ? 'Parametric'
+                                    : model.source === 'demo'
+                                      ? 'Demo asset'
+                                      : 'Uploaded'}
                         </p>
                       </div>
                       <div className="flex items-center gap-2">

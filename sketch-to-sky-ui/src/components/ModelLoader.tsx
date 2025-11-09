@@ -36,6 +36,7 @@ const DEFAULT_SOURCE_NAMES: Record<ModelSource, string> = {
   local: 'Local wing model',
   dreamfusion: 'DreamFusion wing model',
   gemini: 'Gemini-assisted wing model',
+  parametric: 'Parametric wing model',
   upload: 'Imported part',
   demo: 'Demo aircraft sample',
 }
@@ -155,16 +156,20 @@ export function useModelLoader(): UseModelLoaderReturn {
             ? 'dreamfusion'
             : sourceLabel === 'gemini'
               ? 'gemini'
-            : 'remote'
+              : sourceLabel === 'parametric'
+                ? 'parametric'
+                : 'remote'
 
       const modelName =
         source === 'local'
           ? 'Local wing model'
           : source === 'dreamfusion'
             ? 'DreamFusion wing model'
-          : source === 'gemini'
-            ? 'Gemini-assisted wing model'
-            : 'Remote wing model'
+            : source === 'gemini'
+              ? 'Gemini-assisted wing model'
+              : source === 'parametric'
+                ? 'Parametric wing model'
+                : 'Remote wing model'
 
       return buildModelItem(source, candidateUrl, modelName, payload as Record<string, unknown>)
     } catch (err) {

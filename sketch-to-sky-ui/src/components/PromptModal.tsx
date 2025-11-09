@@ -53,7 +53,7 @@ export function PromptModal({
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 24, opacity: 0 }}
             transition={{ type: 'spring', damping: 22, stiffness: 200 }}
-            className="w-[min(520px,92%)] rounded-3xl border border-slate-700 bg-slate-900/90 p-8 text-slate-100 shadow-2xl"
+            className="w-[min(680px,92%)] rounded-3xl border border-slate-700 bg-slate-900/90 p-8 text-slate-100 shadow-2xl"
           >
             <h2 className="text-2xl font-semibold">Start Your Design</h2>
             <p className="mt-2 text-sm text-slate-400">
@@ -75,12 +75,13 @@ export function PromptModal({
                 value={generatorMode}
                 onChange={(event) => onGeneratorChange(event.target.value as GeneratorMode)}
                 disabled={isLoading}
-                className="rounded-xl border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
+                className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 disabled:cursor-not-allowed disabled:opacity-60 sm:flex-initial sm:min-w-[320px]"
               >
-                <option value="auto">Auto (Remote → DreamFusion → Gemini → Local)</option>
+                <option value="auto">Auto (Remote → DreamFusion → Gemini → Parametric → Local)</option>
                 <option value="remote">Remote API</option>
                 <option value="dreamfusion">DreamFusion</option>
                 <option value="gemini">Gemini Assistant</option>
+                <option value="parametric">Parametric Wing</option>
                 <option value="local">Local Extraction</option>
               </select>
             </div>
